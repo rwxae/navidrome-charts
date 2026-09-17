@@ -21,6 +21,10 @@ struct Args {
     /// Playlist max size
     #[arg(long, default_value_t = 200)]
     max_size: u32,
+
+    /// Most Played playlist title
+    #[arg(long)]
+    most_played_title: Option<String>,
 }
 
 struct App {
@@ -56,12 +60,20 @@ impl App {
     }
 }
 
+// struct Playlist {
+//     id: String,
+//     title: String
+// }
+
 static CLIENT_NAME: &str = "navidrome-charts";
 static SUBSONIC_VERSION: &str = "1.16.1";
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-    let app = App::new(args)?;
+fn create_or_update_most_played(app: &App) -> Result<(), Box<dyn std::error::Error>> {
+    let title = app
+        .params
+        .most_played_title
+        .clone()
+        .unwrap_or(format!("{} Most Played - Global", app.params.max_size));
 
     let mut statement = app.db_connection.prepare(
         "
@@ -83,7 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut url = app.prepare_url();
     url.set_path("rest/createPlaylist");
     let mut url_query = url.query_pairs_mut();
-    url_query.append_pair("name", "200 Most Played - Global");
+    url_query.append_pair("name", &title);
 
     // TODO: fetch actual id from subsonic
     let maybe_playlist_id = Some("ZArLXt85UARuq8Qo4ncY5r");
@@ -98,6 +110,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(url_query);
 
     app.subsonic_client.get(url).send()?;
+
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+    let app = App::new(args)?;
+
+    create_or_update_most_played(&app)?;
 
     Ok(())
 }
