@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use rand::distr::{Alphanumeric, SampleString};
 use reqwest::{Url, blocking::Client};
 use rusqlite::{Connection, OpenFlags};
 
@@ -20,26 +21,49 @@ struct Args {
     /// Playlist max size
     #[arg(long, default_value_t = 200)]
     max_size: u32,
+}
 
-    #[arg(long, default_value = "1.16.1")]
-    subsonic_version: String,
+struct App {
+    params: Args,
+    db_connection: Connection,
+    subsonic_client: Client,
+}
+
+impl App {
+    fn new(params: Args) -> Result<Self, rusqlite::Error> {
+        let db_connection =
+            Connection::open_with_flags(&params.db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        Ok(Self {
+            params,
+            db_connection,
+            subsonic_client: Client::new(),
+        })
+    }
+
+    fn prepare_url(&self) -> Url {
+        let mut url = self.params.server_url.clone();
+        let salt = Alphanumeric.sample_string(&mut rand::rng(), 10);
+        let digest = md5::compute(self.params.password.clone() + &salt);
+        let token = format!("{:x}", digest);
+        url.query_pairs_mut()
+            .append_pair("c", CLIENT_NAME)
+            .append_pair("v", SUBSONIC_VERSION)
+            .append_pair("f", "json")
+            .append_pair("u", &self.params.username)
+            .append_pair("s", &salt)
+            .append_pair("t", &token);
+        url
+    }
 }
 
 static CLIENT_NAME: &str = "navidrome-charts";
+static SUBSONIC_VERSION: &str = "1.16.1";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let Args {
-        db_path,
-        server_url,
-        username,
-        password,
-        max_size,
-        subsonic_version,
-    } = Args::parse();
-    let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    let client = Client::new();
+    let args = Args::parse();
+    let app = App::new(args)?;
 
-    let mut statement = conn.prepare(
+    let mut statement = app.db_connection.prepare(
         "
             SELECT
                 mf.id,
@@ -53,16 +77,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ",
     )?;
 
-    let mut url = server_url.clone();
+    let songs =
+        statement.query_map([app.params.max_size], |row| row.get(0) as Result<String, _>)?;
+
+    let mut url = app.prepare_url();
     url.set_path("rest/createPlaylist");
     let mut url_query = url.query_pairs_mut();
-    url_query
-        .append_pair("c", CLIENT_NAME)
-        .append_pair("v", &subsonic_version)
-        .append_pair("f", "json")
-        .append_pair("u", &username)
-        .append_pair("p", &password)
-        .append_pair("name", "200 Most Played - Global");
+    url_query.append_pair("name", "200 Most Played - Global");
 
     // TODO: fetch actual id from subsonic
     let maybe_playlist_id = Some("ZArLXt85UARuq8Qo4ncY5r");
@@ -71,14 +92,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         url_query.append_pair("playlistId", playlist_id);
     };
 
-    let songs = statement.query_map([max_size], |row| row.get(0) as Result<String, _>)?;
-
     for song in songs {
         url_query.append_pair("songId", song?.as_str());
     }
     drop(url_query);
 
-    client.get(url).send()?;
+    app.subsonic_client.get(url).send()?;
 
     Ok(())
 }
