@@ -1,3 +1,4 @@
+use std::env;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -11,15 +12,6 @@ mod subsonic;
 #[derive(Parser)]
 struct Args {
     db_path: PathBuf,
-
-    #[arg(short, long)]
-    server_url: Url,
-
-    #[arg(short, long)]
-    username: String,
-
-    #[arg(short, long)]
-    password: String,
 
     /// Playlist max size
     #[arg(long, default_value_t = 200)]
@@ -107,13 +99,16 @@ fn create_or_update_recently_played(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Args {
         db_path,
-        server_url,
-        username,
-        password,
         max_size,
         most_played_title,
         recently_played_title,
     } = Args::parse();
+
+    let server_url: Url = env::var("SUBSONIC_SERVER_URL")
+        .map_err(|_| "missing SUBSONIC_SERVER_URL env")?
+        .parse()?;
+    let username = env::var("SUBSONIC_USERNAME").map_err(|_| "missing SUBSONIC_USERNAME env")?;
+    let password = env::var("SUBSONIC_PASSWORD").map_err(|_| "missing SUBSONIC_PASSWORD env")?;
 
     let db_connection = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let subsonic_client = SubsonicClient::new(server_url, username, password, Client::new());
