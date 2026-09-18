@@ -79,15 +79,15 @@ impl SubsonicClient {
         &self.username
     }
 
-    pub fn create_playlist(
+    pub fn create_playlist<T: IntoIterator<Item = String>>(
         &self,
         title: String,
-        songs: impl Iterator<Item = String>,
+        songs: T,
         playlist_id: Option<String>,
     ) -> Result<(), reqwest::Error> {
         let mut params = self.get_params();
         params.push(("name", title));
-        params.extend(songs.map(|id| ("songId", id)));
+        params.extend(songs.into_iter().map(|id| ("songId", id)));
         if let Some(playlist_id) = playlist_id {
             params.push(("playlistId", playlist_id));
         }

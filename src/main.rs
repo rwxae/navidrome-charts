@@ -26,13 +26,37 @@ struct Args {
     recently_played_title: Option<String>,
 }
 
-fn create_or_update_most_played(
-    db: &Connection,
-    client: &SubsonicClient,
-    title: String,
+struct App {
+    client: SubsonicClient,
+    connection: Connection,
+    playlists: Vec<Playlist>,
     max_size: u32,
-    playlists: &[Playlist],
-) -> Result<(), Box<dyn std::error::Error>> {
+}
+
+impl App {
+    fn new(
+        client: SubsonicClient,
+        connection: Connection,
+        playlists: Vec<Playlist>,
+        max_size: u32,
+    ) -> Self {
+        Self {
+            client,
+            connection,
+            playlists,
+            max_size,
+        }
+    }
+
+    fn get_playlist_id(&self, title: &str) -> Option<String> {
+        self.playlists
+            .iter()
+            .find(|&playlist| playlist.name == title && playlist.owner == self.client.username())
+            .map(|playlist| playlist.id.clone())
+    }
+}
+
+fn get_most_played_songs(db: &Connection, max_size: u32) -> Result<Vec<String>, rusqlite::Error> {
     let mut statement = db.prepare(
         "
             SELECT
@@ -46,28 +70,21 @@ fn create_or_update_most_played(
             LIMIT ?1;
         ",
     )?;
+    let records = statement.query_map([max_size], |row| row.get(0) as Result<String, _>)?;
 
-    let songs = statement
-        .query_map([max_size], |row| row.get(0) as Result<String, _>)?
-        .map(|song| song.unwrap());
+    let mut songs = Vec::with_capacity(max_size as usize);
+    for record in records {
+        let song = record?;
+        songs.push(song);
+    }
 
-    let maybe_playlist_id = playlists
-        .iter()
-        .find(|&playlist| playlist.name == title && playlist.owner == client.username())
-        .map(|playlist| playlist.id.clone());
-
-    client.create_playlist(title, songs, maybe_playlist_id)?;
-
-    Ok(())
+    Ok(songs)
 }
 
-fn create_or_update_recently_played(
+fn get_recently_played_songs(
     db: &Connection,
-    client: &SubsonicClient,
-    title: String,
     max_size: u32,
-    playlists: &[Playlist],
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<String>, rusqlite::Error> {
     let mut statement = db.prepare(
         "
             SELECT
@@ -81,19 +98,15 @@ fn create_or_update_recently_played(
             LIMIT ?1;
         ",
     )?;
+    let records = statement.query_map([max_size], |row| row.get(0) as Result<String, _>)?;
 
-    let songs = statement
-        .query_map([max_size], |row| row.get(0) as Result<String, _>)?
-        .map(|song| song.unwrap());
+    let mut songs = Vec::with_capacity(max_size as usize);
+    for record in records {
+        let song = record?;
+        songs.push(song);
+    }
 
-    let maybe_playlist_id = playlists
-        .iter()
-        .find(|&playlist| playlist.name == title && playlist.owner == client.username())
-        .map(|playlist| playlist.id.clone());
-
-    client.create_playlist(title, songs, maybe_playlist_id)?;
-
-    Ok(())
+    Ok(songs)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -114,26 +127,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let subsonic_client = SubsonicClient::new(server_url, username, password, Client::new());
 
     let playlists = subsonic_client.get_playlists()?;
+    let app = App::new(subsonic_client, db_connection, playlists, max_size);
 
-    let most_played_title =
-        most_played_title.unwrap_or_else(|| format!("{} Most Played - Global", max_size));
-    create_or_update_most_played(
-        &db_connection,
-        &subsonic_client,
-        most_played_title,
-        max_size,
-        &playlists,
-    )?;
+    let title = most_played_title.unwrap_or_else(|| format!("{} Most Played - Global", max_size));
+    let songs = get_most_played_songs(&app.connection, app.max_size)?;
+    let id = app.get_playlist_id(&title);
+    app.client.create_playlist(title, songs, id)?;
 
-    let recently_played_title =
+    let title =
         recently_played_title.unwrap_or_else(|| format!("{} Recently Played - Global", max_size));
-    create_or_update_recently_played(
-        &db_connection,
-        &subsonic_client,
-        recently_played_title,
-        max_size,
-        &playlists,
-    )?;
+    let songs = get_recently_played_songs(&app.connection, app.max_size)?;
+    let id = app.get_playlist_id(&title);
+    app.client.create_playlist(title, songs, id)?;
 
     Ok(())
 }
