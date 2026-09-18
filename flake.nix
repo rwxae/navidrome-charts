@@ -9,6 +9,11 @@
         nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed (system: fn nixpkgs.legacyPackages.${system});
     in
     {
+      packages = eachSystem (pkgs: rec {
+        navidrome-charts = pkgs.callPackage ./nix/package.nix { };
+        default = navidrome-charts;
+      });
+
       devShells = eachSystem (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
