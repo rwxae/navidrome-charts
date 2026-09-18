@@ -14,13 +14,6 @@ in
   options.services.navidrome-charts = {
     enable = lib.mkEnableOption "Navidrome playlist generator";
 
-    assertions = [
-      {
-        assertion = config.services.navidrome.enable;
-        message = "services.navidrome-charts requires services.navidrome.enable to be true.";
-      }
-    ];
-
     environmentFile = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -51,6 +44,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = config.services.navidrome.enable;
+        message = "services.navidrome-charts requires services.navidrome.enable to be true.";
+      }
+    ];
+
     systemd.services.navidrome-charts = {
       description = "Generate Navidrome playlists from play history";
       serviceConfig = {
