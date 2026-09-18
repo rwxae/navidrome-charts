@@ -18,12 +18,12 @@ struct Args {
     max_size: u32,
 
     /// Most Played playlist title
-    #[arg(long)]
-    most_played_title: Option<String>,
+    #[arg(long, default_value = "Most Played - Global")]
+    most_played_title: String,
 
-    /// Recently Played playlist title
-    #[arg(long)]
-    recently_played_title: Option<String>,
+    /// History playlist title
+    #[arg(long, default_value = "History - Global")]
+    history_title: String,
 }
 
 struct App {
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         db_path,
         max_size,
         most_played_title,
-        recently_played_title,
+        history_title,
     } = Args::parse();
 
     let server_url: Url = env::var("SUBSONIC_SERVER_URL")
@@ -129,16 +129,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let playlists = subsonic_client.get_playlists()?;
     let app = App::new(subsonic_client, db_connection, playlists, max_size);
 
-    let title = most_played_title.unwrap_or_else(|| format!("{} Most Played - Global", max_size));
     let songs = get_most_played_songs(&app.connection, app.max_size)?;
-    let id = app.get_playlist_id(&title);
-    app.client.create_playlist(title, songs, id)?;
+    let id = app.get_playlist_id(&most_played_title);
+    app.client.create_playlist(most_played_title, songs, id)?;
 
-    let title =
-        recently_played_title.unwrap_or_else(|| format!("{} Recently Played - Global", max_size));
     let songs = get_recently_played_songs(&app.connection, app.max_size)?;
-    let id = app.get_playlist_id(&title);
-    app.client.create_playlist(title, songs, id)?;
+    let id = app.get_playlist_id(&history_title);
+    app.client.create_playlist(history_title, songs, id)?;
 
     Ok(())
 }
