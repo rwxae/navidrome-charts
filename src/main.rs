@@ -4,7 +4,7 @@ use clap::Parser;
 use reqwest::{Url, blocking::Client};
 use rusqlite::{Connection, OpenFlags};
 
-use crate::subsonic::SubsonicClient;
+use crate::subsonic::{Playlist, SubsonicClient};
 
 mod subsonic;
 
@@ -35,6 +35,7 @@ fn create_or_update_most_played(
     client: &SubsonicClient,
     title: String,
     max_size: u32,
+    playlists: &[Playlist],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut statement = db.prepare(
         "
@@ -54,8 +55,10 @@ fn create_or_update_most_played(
         .query_map([max_size], |row| row.get(0) as Result<String, _>)?
         .map(|song| song.unwrap());
 
-    // TODO: fetch actual id from subsonic
-    let maybe_playlist_id = Some("ZArLXt85UARuq8Qo4ncY5r".to_string());
+    let maybe_playlist_id = playlists
+        .iter()
+        .find(|&playlist| playlist.name == title && playlist.owner == client.username())
+        .map(|playlist| playlist.id.clone());
 
     client.create_playlist(title, songs, maybe_playlist_id)?;
 
@@ -75,6 +78,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_connection = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let subsonic_client = SubsonicClient::new(server_url, username, password, Client::new());
 
+    let playlists = subsonic_client.get_playlists()?;
+
     let most_played_title =
         most_played_title.unwrap_or_else(|| format!("{} Most Played - Global", max_size));
     create_or_update_most_played(
@@ -82,6 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &subsonic_client,
         most_played_title,
         max_size,
+        &playlists,
     )?;
 
     Ok(())

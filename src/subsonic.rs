@@ -1,5 +1,6 @@
 use rand::distr::{Alphanumeric, SampleString};
 use reqwest::{Url, blocking::Client};
+use serde::Deserialize;
 
 static CLIENT_NAME: &str = "navidrome-charts";
 static SUBSONIC_VERSION: &str = "1.16.1";
@@ -9,6 +10,32 @@ pub struct SubsonicClient {
     username: String,
     password: String,
     client: Client,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Playlist {
+    pub id: String,
+    pub name: String,
+    pub owner: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetPlaylistsResponse {
+    status: String,
+    version: String,
+    playlists: Playlists,
+}
+
+#[derive(Debug, Deserialize)]
+struct Playlists {
+    #[serde(default)]
+    playlist: Vec<Playlist>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SubsonicResponse<T> {
+    #[serde(rename = "subsonic-response")]
+    subsonic_response: T,
 }
 
 fn get_salt() -> String {
@@ -42,21 +69,44 @@ impl SubsonicClient {
         ]
     }
 
+    fn endpoint(&self, path: &str) -> Url {
+        let mut url = self.base_url.clone();
+        url.set_path(format!("rest/{path}").as_str());
+        url
+    }
+
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
     pub fn create_playlist(
         &self,
         title: String,
         songs: impl Iterator<Item = String>,
         playlist_id: Option<String>,
     ) -> Result<(), reqwest::Error> {
-        let mut url = self.base_url.clone();
-        url.set_path("rest/createPlaylist");
         let mut params = self.get_params();
         params.push(("name", title));
         params.extend(songs.map(|id| ("songId", id)));
         if let Some(playlist_id) = playlist_id {
             params.push(("playlistId", playlist_id));
         }
-        self.client.post(url).query(&params).send()?;
+        self.client
+            .post(self.endpoint("createPlaylist"))
+            .query(&params)
+            .send()?;
         Ok(())
+    }
+
+    pub fn get_playlists(&self) -> Result<Vec<Playlist>, reqwest::Error> {
+        let params = self.get_params();
+        let response = self
+            .client
+            .get(self.endpoint("getPlaylists"))
+            .query(&params)
+            .send()?;
+        response.error_for_status_ref()?;
+        let json: SubsonicResponse<GetPlaylistsResponse> = response.json()?;
+        Ok(json.subsonic_response.playlists.playlist)
     }
 }
