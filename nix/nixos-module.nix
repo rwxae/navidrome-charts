@@ -57,7 +57,7 @@ in
         Type = "oneshot";
         User = config.services.navidrome.user;
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
-        ExecStart = ''${pkgs.getExe navidrome-charts} "${cfg.dbPath}"'';
+        ExecStart = ''${lib.getExe navidrome-charts} "${cfg.dbPath}"'';
       };
       startAt = cfg.interval;
     };
